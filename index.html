@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Mensajes" />
+  <title>Lector de Mensajes</title>
+  <link rel="manifest" href="manifest.json" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    header {
+      width: 100%;
+      max-width: 480px;
+      text-align: center;
+      padding: 30px 0 10px;
+    }
+
+    header h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      color: #8b949e;
+      font-size: 0.9rem;
+      margin-top: 6px;
+    }
+
+    /* Mic button */
+    #mic-btn {
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      border: none;
+      background: #21262d;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 30px auto;
+      transition: background 0.2s, transform 0.1s;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+
+    #mic-btn:active { transform: scale(0.95); }
+    #mic-btn.listening { background: #1f4f23; animation: pulse 1.4s infinite; }
+    #mic-btn.speaking  { background: #1a3a5c; }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(56, 211, 72, 0.4); }
+      50%       { box-shadow: 0 0 0 18px rgba(56, 211, 72, 0); }
+    }
+
+    #mic-icon { font-size: 2.6rem; }
+
+    /* Status */
+    #status {
+      font-size: 0.95rem;
+      color: #8b949e;
+      text-align: center;
+      min-height: 22px;
+      margin-bottom: 10px;
+    }
+
+    #status.active   { color: #3fb950; }
+    #status.speaking { color: #58a6ff; }
+    #status.error    { color: #f85149; }
+
+    /* Transcript */
+    #transcript-box {
+      width: 100%;
+      max-width: 480px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 0.9rem;
+      color: #8b949e;
+      min-height: 42px;
+      margin-bottom: 24px;
+    }
+
+    /* Messages list */
+    .section-title {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .section-title span { font-size: 1rem; font-weight: 600; }
+
+    .badge {
+      background: #f85149;
+      color: #fff;
+      border-radius: 99px;
+      padding: 2px 8px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    #messages-list {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .msg-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .msg-card.read { opacity: 0.45; }
+
+    .msg-info { flex: 1; }
+
+    .msg-sender {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #58a6ff;
+      margin-bottom: 4px;
+    }
+
+    .msg-text {
+      font-size: 0.9rem;
+      color: #c9d1d9;
+      line-height: 1.4;
+    }
+
+    .msg-time {
+      font-size: 0.75rem;
+      color: #8b949e;
+      white-space: nowrap;
+      padding-top: 2px;
+    }
+
+    /* Add message form */
+    #add-form {
+      width: 100%;
+      max-width: 480px;
+      margin-top: 20px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    #add-form h3 { font-size: 0.9rem; margin-bottom: 10px; color: #8b949e; }
+
+    #add-form input, #add-form textarea {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      color: #e6edf3;
+      padding: 8px 12px;
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+      font-family: inherit;
+    }
+
+    #add-form textarea { resize: none; height: 60px; }
+
+    #add-form button {
+      background: #238636;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      padding: 8px 18px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    #add-form button:active { background: #2ea043; }
+
+    footer {
+      margin-top: 30px;
+      color: #484f58;
+      font-size: 0.75rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📬 Lector de Mensajes</h1>
+  <p>Di <strong>"mensaje"</strong> para escuchar tus pendientes</p>
+</header>
+
+<button id="mic-btn" title="Activar/desactivar escucha">
+  <span id="mic-icon">🎤</span>
+</button>
+
+<div id="status">Presioná el micrófono para empezar</div>
+<div id="transcript-box">…</div>
+
+<div class="section-title">
+  <span>Mensajes pendientes</span>
+  <span class="badge" id="count">0</span>
+</div>
+
+<div id="messages-list"></div>
+
+<div id="add-form">
+  <h3>+ Agregar mensaje</h3>
+  <input type="text" id="inp-sender" placeholder="Remitente (ej: Juan)" />
+  <textarea id="inp-text" placeholder="Texto del mensaje…"></textarea>
+  <button onclick="addMessage()">Agregar</button>
+</div>
+
+<footer>Funciona en navegador móvil · Agregá a pantalla de inicio para acceso rápido</footer>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let messages = JSON.parse(localStorage.getItem('vms_messages') || '[]');
+  let listening = false;
+  let recognition = null;
+  let synth = window.speechSynthesis;
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  function saveAndRender() {
+    localStorage.setItem('vms_messages', JSON.stringify(messages));
+    render();
+  }
+
+  function render() {
+    const list = document.getElementById('messages-list');
+    const pending = messages.filter(m => !m.read);
+    document.getElementById('count').textContent = pending.length;
+    list.innerHTML = '';
+
+    if (messages.length === 0) {
+      list.innerHTML = '<p style="color:#484f58;font-size:0.85rem;text-align:center;padding:16px 0">Sin mensajes todavía</p>';
+      return;
+    }
+
+    messages.slice().reverse().forEach((m, idx) => {
+      const realIdx = messages.length - 1 - idx;
+      const card = document.createElement('div');
+      card.className = 'msg-card' + (m.read ? ' read' : '');
+      card.innerHTML = `
+        <div class="msg-info">
+          <div class="msg-sender">${esc(m.sender)}</div>
+          <div class="msg-text">${esc(m.text)}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          <span class="msg-time">${m.time}</span>
+          ${!m.read
+            ? `<button onclick="markRead(${realIdx})" style="background:#1f4f23;border:none;border-radius:6px;color:#3fb950;padding:4px 10px;font-size:0.75rem;cursor:pointer">✓ Leído</button>`
+            : `<span style="color:#3fb950;font-size:0.75rem">✓</span>`}
+        </div>
+      `;
+      list.appendChild(card);
+    });
+  }
+
+  function esc(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function markRead(idx) {
+    messages[idx].read = true;
+    saveAndRender();
+  }
+
+  function addMessage() {
+    const sender = document.getElementById('inp-sender').value.trim();
+    const text   = document.getElementById('inp-text').value.trim();
+    if (!sender || !text) return;
+    messages.push({ sender, text, read: false, time: nowStr() });
+    document.getElementById('inp-sender').value = '';
+    document.getElementById('inp-text').value   = '';
+    saveAndRender();
+  }
+
+  function nowStr() {
+    const d = new Date();
+    return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // ── Speech synthesis ───────────────────────────────────────────────────────
+  function readPendingMessages() {
+    const pending = messages.filter(m => !m.read);
+    setStatus('speaking', '🔊 Leyendo mensajes…');
+    document.getElementById('mic-btn').classList.add('speaking');
+
+    if (pending.length === 0) {
+      speak('No tenés mensajes pendientes.', done);
+      return;
+    }
+
+    speak(`Tenés ${pending.length} mensaje${pending.length > 1 ? 's' : ''} pendiente${pending.length > 1 ? 's' : ''}.`, () => {
+      readNext(pending, 0);
+    });
+  }
+
+  function readNext(list, i) {
+    if (i >= list.length) { done(); return; }
+    const m = list[i];
+    const idx = messages.indexOf(m);
+    speak(`Mensaje de ${m.sender}: ${m.text}`, () => {
+      if (idx > -1) messages[idx].read = true;
+      saveAndRender();
+      readNext(list, i + 1);
+    });
+  }
+
+  function speak(text, cb) {
+    synth.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.lang = 'es-AR';
+    utt.rate = 1;
+    utt.onend = cb || null;
+    synth.speak(utt);
+  }
+
+  function done() {
+    document.getElementById('mic-btn').classList.remove('speaking');
+    setStatus('active', '🎙 Escuchando… decí "mensaje"');
+  }
+
+  // ── Voice recognition ──────────────────────────────────────────────────────
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  function initRecognition() {
+    if (!SpeechRecognition) {
+      setStatus('error', '⚠ Tu navegador no soporta reconocimiento de voz');
+      return false;
+    }
+    recognition = new SpeechRecognition();
+    recognition.lang = 'es-AR';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (e) => {
+      let interim = '';
+      let final = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript.toLowerCase().trim();
+        if (e.results[i].isFinal) final += t + ' ';
+        else interim += t;
+      }
+      document.getElementById('transcript-box').textContent = (final || interim) || '…';
+
+      if (final.includes('mensaje') || interim.includes('mensaje')) {
+        if (!synth.speaking) readPendingMessages();
+      }
+    };
+
+    recognition.onerror = (e) => {
+      if (e.error === 'no-speech') return;
+      setStatus('error', `Error: ${e.error}`);
+    };
+
+    recognition.onend = () => {
+      if (listening) recognition.start(); // keep alive
+    };
+
+    return true;
+  }
+
+  function toggleListening() {
+    if (!listening) {
+      if (!recognition && !initRecognition()) return;
+      listening = true;
+      recognition.start();
+      document.getElementById('mic-btn').classList.add('listening');
+      document.getElementById('mic-icon').textContent = '⏹';
+      setStatus('active', '🎙 Escuchando… decí "mensaje"');
+    } else {
+      listening = false;
+      recognition.stop();
+      document.getElementById('mic-btn').classList.remove('listening');
+      document.getElementById('mic-icon').textContent = '🎤';
+      setStatus('', 'Presioná el micrófono para empezar');
+      document.getElementById('transcript-box').textContent = '…';
+    }
+  }
+
+  function setStatus(cls, text) {
+    const el = document.getElementById('status');
+    el.className = cls;
+    el.textContent = text;
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  document.getElementById('mic-btn').addEventListener('click', toggleListening);
+
+  // Demo messages if first visit
+  if (messages.length === 0) {
+    messages = [
+      { sender: 'Juan', text: 'Reunión mañana a las 9hs en la obra.', read: false, time: '08:30' },
+      { sender: 'María', text: '¿Podés revisar el cronograma actualizado?', read: false, time: '09:15' },
+    ];
+    saveAndRender();
+  } else {
+    render();
+  }
+</script>
+</body>
+</html>
