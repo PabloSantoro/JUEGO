@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Mensajes" />
-  <title>Lector de Mensajes</title>
+  <title>Lector WhatsApp</title>
   <link rel="manifest" href="manifest.json" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -159,45 +159,29 @@
       padding-top: 2px;
     }
 
-    /* Add message form */
-    #add-form {
+    /* QR banner */
+    #qr-banner {
+      display: none;
       width: 100%;
       max-width: 480px;
-      margin-top: 20px;
-      background: #161b22;
+      background: #1c2128;
       border: 1px solid #30363d;
       border-radius: 10px;
       padding: 16px;
+      text-align: center;
+      margin-bottom: 16px;
     }
-
-    #add-form h3 { font-size: 0.9rem; margin-bottom: 10px; color: #8b949e; }
-
-    #add-form input, #add-form textarea {
-      width: 100%;
-      background: #0d1117;
-      border: 1px solid #30363d;
+    #qr-banner p { font-size: 0.85rem; color: #8b949e; margin-bottom: 10px; }
+    #qr-banner a {
+      display: inline-block;
+      background: #25d366;
+      color: #000;
+      font-weight: 700;
+      padding: 8px 20px;
       border-radius: 8px;
-      color: #e6edf3;
-      padding: 8px 12px;
+      text-decoration: none;
       font-size: 0.9rem;
-      margin-bottom: 8px;
-      font-family: inherit;
     }
-
-    #add-form textarea { resize: none; height: 60px; }
-
-    #add-form button {
-      background: #238636;
-      border: none;
-      border-radius: 8px;
-      color: #fff;
-      padding: 8px 18px;
-      font-size: 0.9rem;
-      cursor: pointer;
-      font-weight: 600;
-    }
-
-    #add-form button:active { background: #2ea043; }
 
     footer {
       margin-top: 30px;
@@ -210,8 +194,11 @@
 <body>
 
 <header>
-  <h1>📬 Lector de Mensajes</h1>
+  <h1>💬 Lector WhatsApp</h1>
   <p>Di <strong>"mensaje"</strong> para escuchar tus pendientes</p>
+  <div id="wa-status" style="margin-top:10px;font-size:0.8rem;padding:6px 14px;border-radius:20px;display:inline-block;background:#21262d;color:#8b949e">
+    ⏳ Conectando…
+  </div>
 </header>
 
 <button id="mic-btn" title="Activar/desactivar escucha">
@@ -226,30 +213,83 @@
   <span class="badge" id="count">0</span>
 </div>
 
-<div id="messages-list"></div>
-
-<div id="add-form">
-  <h3>+ Agregar mensaje</h3>
-  <input type="text" id="inp-sender" placeholder="Remitente (ej: Juan)" />
-  <textarea id="inp-text" placeholder="Texto del mensaje…"></textarea>
-  <button onclick="addMessage()">Agregar</button>
+<div id="qr-banner">
+  <p>WhatsApp no está conectado. Escaneá el QR para vincular tu cuenta.</p>
+  <a id="qr-link" href="#" target="_blank">📷 Abrir QR para escanear</a>
 </div>
 
-<footer>Funciona en navegador móvil · Agregá a pantalla de inicio para acceso rápido</footer>
+<div id="messages-list"></div>
+
+<footer>WhatsApp vía Baileys · Agregá a pantalla de inicio para acceso rápido</footer>
 
 <script>
+  // ── Config ─────────────────────────────────────────────────────────────────
+  // El backend sirve tanto la app como la API en el mismo origen
+  const API = window.location.origin;
+
   // ── State ──────────────────────────────────────────────────────────────────
-  let messages = JSON.parse(localStorage.getItem('vms_messages') || '[]');
+  let messages = [];
   let listening = false;
   let recognition = null;
   let synth = window.speechSynthesis;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-  function saveAndRender() {
-    localStorage.setItem('vms_messages', JSON.stringify(messages));
+  // ── Backend polling ────────────────────────────────────────────────────────
+  async function fetchStatus() {
+    try {
+      const r = await fetch(API + '/api/status');
+      const data = await r.json();
+      const el = document.getElementById('wa-status');
+      const banner = document.getElementById('qr-banner');
+      if (data.connected) {
+        el.style.background = '#1f4f23';
+        el.style.color = '#3fb950';
+        el.textContent = '✅ WhatsApp conectado';
+        banner.style.display = 'none';
+      } else if (data.hasQr) {
+        el.style.background = '#2d2208';
+        el.style.color = '#e3b341';
+        el.textContent = '📷 Esperando escaneo QR';
+        banner.style.display = 'block';
+        document.getElementById('qr-link').href = API + '/qr';
+      } else {
+        el.style.background = '#21262d';
+        el.style.color = '#8b949e';
+        el.textContent = '⏳ Conectando a WhatsApp…';
+        banner.style.display = 'none';
+      }
+    } catch {
+      const el = document.getElementById('wa-status');
+      el.style.background = '#3d1010';
+      el.style.color = '#f85149';
+      el.textContent = '⚠ Servidor offline';
+    }
+  }
+
+  async function fetchMessages() {
+    try {
+      const r = await fetch(API + '/api/messages');
+      const data = await r.json();
+      messages = data.messages || [];
+      render();
+    } catch {
+      // servidor offline, mantenemos los mensajes anteriores
+    }
+  }
+
+  async function markRead(id) {
+    try {
+      await fetch(API + '/api/messages/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+    } catch {}
+    const msg = messages.find(m => m.id === id);
+    if (msg) msg.read = true;
     render();
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   function render() {
     const list = document.getElementById('messages-list');
     const pending = messages.filter(m => !m.read);
@@ -261,8 +301,7 @@
       return;
     }
 
-    messages.slice().reverse().forEach((m, idx) => {
-      const realIdx = messages.length - 1 - idx;
+    messages.slice().reverse().forEach((m) => {
       const card = document.createElement('div');
       card.className = 'msg-card' + (m.read ? ' read' : '');
       card.innerHTML = `
@@ -273,7 +312,7 @@
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
           <span class="msg-time">${m.time}</span>
           ${!m.read
-            ? `<button onclick="markRead(${realIdx})" style="background:#1f4f23;border:none;border-radius:6px;color:#3fb950;padding:4px 10px;font-size:0.75rem;cursor:pointer">✓ Leído</button>`
+            ? `<button onclick="markRead('${m.id}')" style="background:#1f4f23;border:none;border-radius:6px;color:#3fb950;padding:4px 10px;font-size:0.75rem;cursor:pointer">✓ Leído</button>`
             : `<span style="color:#3fb950;font-size:0.75rem">✓</span>`}
         </div>
       `;
@@ -282,27 +321,7 @@
   }
 
   function esc(str) {
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
-
-  function markRead(idx) {
-    messages[idx].read = true;
-    saveAndRender();
-  }
-
-  function addMessage() {
-    const sender = document.getElementById('inp-sender').value.trim();
-    const text   = document.getElementById('inp-text').value.trim();
-    if (!sender || !text) return;
-    messages.push({ sender, text, read: false, time: nowStr() });
-    document.getElementById('inp-sender').value = '';
-    document.getElementById('inp-text').value   = '';
-    saveAndRender();
-  }
-
-  function nowStr() {
-    const d = new Date();
-    return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
   // ── Speech synthesis ───────────────────────────────────────────────────────
@@ -324,10 +343,8 @@
   function readNext(list, i) {
     if (i >= list.length) { done(); return; }
     const m = list[i];
-    const idx = messages.indexOf(m);
     speak(`Mensaje de ${m.sender}: ${m.text}`, () => {
-      if (idx > -1) messages[idx].read = true;
-      saveAndRender();
+      markRead(m.id);
       readNext(list, i + 1);
     });
   }
@@ -380,7 +397,7 @@
     };
 
     recognition.onend = () => {
-      if (listening) recognition.start(); // keep alive
+      if (listening) recognition.start();
     };
 
     return true;
@@ -413,16 +430,11 @@
   // ── Init ───────────────────────────────────────────────────────────────────
   document.getElementById('mic-btn').addEventListener('click', toggleListening);
 
-  // Demo messages if first visit
-  if (messages.length === 0) {
-    messages = [
-      { sender: 'Juan', text: 'Reunión mañana a las 9hs en la obra.', read: false, time: '08:30' },
-      { sender: 'María', text: '¿Podés revisar el cronograma actualizado?', read: false, time: '09:15' },
-    ];
-    saveAndRender();
-  } else {
-    render();
-  }
+  // Polling: estado cada 5s, mensajes cada 3s
+  fetchStatus();
+  fetchMessages();
+  setInterval(fetchStatus, 5000);
+  setInterval(fetchMessages, 3000);
 </script>
 </body>
 </html>
